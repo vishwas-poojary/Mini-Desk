@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { ColumnDef } from '@tanstack/react-table';
 import { UserPlus, Mail, Phone, Calendar } from 'lucide-react';
 import { apiClient } from '../../api/client';
@@ -6,15 +7,12 @@ import { appDb } from '../../db/app-db';
 import { sseClient } from '../../services/sse-service';
 import { DataTable } from '../../components/table/DataTable';
 import { MemberCardMobile } from '../../components/cards/MemberCardMobile';
-import { DynamicForm } from '../../components/forms/DynamicForm';
-import { memberFormConfig, type MemberFormValues } from './memberForm.config';
 import type { Member } from '@minidesk/types';
 
 export const MembersPage: React.FC = () => {
+  const navigate = useNavigate();
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const fetchMembers = async () => {
     try {
@@ -41,18 +39,6 @@ export const MembersPage: React.FC = () => {
     return () => unsub();
   }, []);
 
-  const handleAddMember = async (values: MemberFormValues) => {
-    setIsSubmitting(true);
-    try {
-      await apiClient.post('/members', values);
-      setShowAddModal(false);
-      await fetchMembers();
-    } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to enroll member');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
 
   const columns = useMemo<ColumnDef<Member>[]>(
     () => [
@@ -128,7 +114,7 @@ export const MembersPage: React.FC = () => {
         <button
           type="button"
           className="btn btn-primary"
-          onClick={() => setShowAddModal(true)}
+          onClick={() => navigate('/members/new')}
         >
           <UserPlus size={16} />
           <span>Enroll Member</span>
@@ -145,40 +131,6 @@ export const MembersPage: React.FC = () => {
           <MemberCardMobile key={member.id} member={member} />
         )}
       />
-
-      {showAddModal && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0, 0, 0, 0.7)',
-            backdropFilter: 'var(--glass-blur)',
-            zIndex: 100,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '20px',
-          }}
-        >
-          <div
-            className="glass-card"
-            style={{
-              width: '100%',
-              maxWidth: '520px',
-              padding: '30px',
-              maxHeight: '90vh',
-              overflowY: 'auto',
-            }}
-          >
-            <DynamicForm
-              config={memberFormConfig}
-              onSubmit={handleAddMember}
-              onCancel={() => setShowAddModal(false)}
-              isLoading={isSubmitting}
-            />
-          </div>
-        </div>
-      )}
     </div>
   );
 };

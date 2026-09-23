@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { ColumnDef } from '@tanstack/react-table';
 import { Plus, BookOpen, MapPin, Hash, CheckCircle2, BookmarkPlus } from 'lucide-react';
 import { apiClient } from '../../api/client';
@@ -6,15 +7,12 @@ import { appDb } from '../../db/app-db';
 import { sseClient } from '../../services/sse-service';
 import { DataTable } from '../../components/table/DataTable';
 import { BookCardMobile } from '../../components/cards/BookCardMobile';
-import { DynamicForm } from '../../components/forms/DynamicForm';
-import { bookFormConfig, type BookFormValues } from './bookForm.config';
 import type { BookItem } from '@minidesk/types';
 
 export const BooksPage: React.FC = () => {
+  const navigate = useNavigate();
   const [books, setBooks] = useState<BookItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const fetchBooks = async () => {
     try {
@@ -44,18 +42,6 @@ export const BooksPage: React.FC = () => {
     return () => unsub();
   }, []);
 
-  const handleAddBook = async (values: BookFormValues) => {
-    setIsSubmitting(true);
-    try {
-      await apiClient.post('/books', values);
-      setShowAddModal(false);
-      await fetchBooks();
-    } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to add book');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
 
   // Reusable Column Configuration for TanStack Table
   const columns = useMemo<ColumnDef<BookItem>[]>(
@@ -131,7 +117,7 @@ export const BooksPage: React.FC = () => {
         <button
           type="button"
           className="btn btn-primary"
-          onClick={() => setShowAddModal(true)}
+          onClick={() => navigate('/books/new')}
         >
           <Plus size={16} />
           <span>Add Volume</span>
@@ -149,41 +135,6 @@ export const BooksPage: React.FC = () => {
           <BookCardMobile key={book.id} book={book} />
         )}
       />
-
-      {/* Modal Dialog for Dynamic Form */}
-      {showAddModal && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0, 0, 0, 0.7)',
-            backdropFilter: 'var(--glass-blur)',
-            zIndex: 100,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '20px',
-          }}
-        >
-          <div
-            className="glass-card"
-            style={{
-              width: '100%',
-              maxWidth: '560px',
-              padding: '30px',
-              maxHeight: '90vh',
-              overflowY: 'auto',
-            }}
-          >
-            <DynamicForm
-              config={bookFormConfig}
-              onSubmit={handleAddBook}
-              onCancel={() => setShowAddModal(false)}
-              isLoading={isSubmitting}
-            />
-          </div>
-        </div>
-      )}
     </div>
   );
 };

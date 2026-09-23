@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { ColumnDef } from '@tanstack/react-table';
 import { BookmarkPlus, RotateCcw, Calendar, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { apiClient } from '../../api/client';
@@ -6,18 +7,12 @@ import { appDb } from '../../db/app-db';
 import { sseClient } from '../../services/sse-service';
 import { DataTable } from '../../components/table/DataTable';
 import { CheckoutCardMobile } from '../../components/cards/CheckoutCardMobile';
-import { MobileActionMenu } from '../../components/table/MobileActionMenu';
-import { DynamicForm } from '../../components/forms/DynamicForm';
-import { createCheckoutFormConfig, type CheckoutFormValues } from './checkoutForm.config';
-import type { Checkout, BookItem, Member } from '@minidesk/types';
+import type { Checkout } from '@minidesk/types';
 
 export const CheckoutsPage: React.FC = () => {
+  const navigate = useNavigate();
   const [checkouts, setCheckouts] = useState<Checkout[]>([]);
-  const [members, setMembers] = useState<Member[]>([]);
-  const [books, setBooks] = useState<BookItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const fetchCheckouts = async () => {
     try {
@@ -32,22 +27,8 @@ export const CheckoutsPage: React.FC = () => {
     }
   };
 
-  const fetchDependencies = async () => {
-    try {
-      const [mRes, bRes] = await Promise.all([
-        apiClient.get<Member[]>('/members'),
-        apiClient.get<BookItem[]>('/books'),
-      ]);
-      setMembers(mRes.data);
-      setBooks(bRes.data);
-    } catch (e) {
-      console.warn('Could not fetch members/books for checkout form', e);
-    }
-  };
-
   useEffect(() => {
     fetchCheckouts();
-    fetchDependencies();
 
     const unsub = sseClient.subscribe((payload) => {
       if (payload.type === 'CHECKOUT_CREATED' || payload.type === 'CHECKOUT_RETURNED') {
@@ -66,31 +47,6 @@ export const CheckoutsPage: React.FC = () => {
       alert(err.response?.data?.message || 'Failed to return book');
     }
   };
-
-  const handleCreateCheckout = async (values: CheckoutFormValues) => {
-    setIsSubmitting(true);
-    try {
-      await apiClient.post('/checkouts', values);
-      setShowAddModal(false);
-      await fetchCheckouts();
-    } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to checkout book');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const formConfig = useMemo(() => {
-    const memberOptions = members
-      .filter((m) => m.status === 'active')
-      .map((m) => ({ label: `${m.name} (${m.membershipNumber})`, value: m.id }));
-
-    const bookOptions = books
-      .filter((b) => b.availableCopies > 0)
-      .map((b) => ({ label: `${b.title} (${b.availableCopies} available)`, value: b.id }));
-
-    return createCheckoutFormConfig(memberOptions, bookOptions);
-  }, [members, books]);
 
   const columns = useMemo<ColumnDef<Checkout>[]>(
     () => [
@@ -195,10 +151,7 @@ export const CheckoutsPage: React.FC = () => {
         <button
           type="button"
           className="btn btn-primary"
-          onClick={() => {
-            fetchDependencies();
-            setShowAddModal(true);
-          }}
+          onClick={() => navigate('/checkouts/new')}
         >
           <BookmarkPlus size={16} />
           <span>New Checkout</span>
@@ -215,40 +168,6 @@ export const CheckoutsPage: React.FC = () => {
           <CheckoutCardMobile key={chk.id} checkout={chk} onReturn={handleReturn} />
         )}
       />
-
-      {showAddModal && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0, 0, 0, 0.7)',
-            backdropFilter: 'var(--glass-blur)',
-            zIndex: 100,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '20px',
-          }}
-        >
-          <div
-            className="glass-card"
-            style={{
-              width: '100%',
-              maxWidth: '520px',
-              padding: '30px',
-              maxHeight: '90vh',
-              overflowY: 'auto',
-            }}
-          >
-            <DynamicForm
-              config={formConfig}
-              onSubmit={handleCreateCheckout}
-              onCancel={() => setShowAddModal(false)}
-              isLoading={isSubmitting}
-            />
-          </div>
-        </div>
-      )}
     </div>
   );
 };

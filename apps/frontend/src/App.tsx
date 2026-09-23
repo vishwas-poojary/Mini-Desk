@@ -4,8 +4,11 @@ import { Login } from './pages/Login';
 import { MainLayout } from './components/layout/MainLayout';
 import { DashboardOverview } from './pages/dashboard/index';
 import { BooksPage } from './pages/books/index';
+import { AddBookPage } from './pages/books/AddBook';
 import { MembersPage } from './pages/members/index';
+import { EnrollMemberPage } from './pages/members/EnrollMember';
 import { CheckoutsPage } from './pages/checkouts/index';
+import { NewCheckoutPage } from './pages/checkouts/NewCheckout';
 import { AuthGuard, RoleGuard } from './components/routes/RouteWrappers';
 import { authApi } from './api/auth';
 import type { User, LoginResponse } from '@minidesk/types';
@@ -84,6 +87,14 @@ export function App() {
         >
           <Route index element={<DashboardOverview user={user!} />} />
           <Route path="books" element={<BooksPage />} />
+          <Route
+            path="books/new"
+            element={
+              <RoleGuard user={user!} allowedRoles={['admin', 'librarian']}>
+                <AddBookPage />
+              </RoleGuard>
+            }
+          />
 
           {/* Role-guarded admin & librarian routes */}
           <Route
@@ -94,12 +105,28 @@ export function App() {
               </RoleGuard>
             }
           />
+          <Route
+            path="members/new"
+            element={
+              <RoleGuard user={user!} allowedRoles={['admin', 'librarian']}>
+                <EnrollMemberPage />
+              </RoleGuard>
+            }
+          />
 
           <Route
             path="checkouts"
             element={
               <RoleGuard user={user!} allowedRoles={['admin', 'librarian']}>
                 <CheckoutsPage />
+              </RoleGuard>
+            }
+          />
+          <Route
+            path="checkouts/new"
+            element={
+              <RoleGuard user={user!} allowedRoles={['admin', 'librarian']}>
+                <NewCheckoutPage />
               </RoleGuard>
             }
           />
