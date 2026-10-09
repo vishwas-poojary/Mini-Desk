@@ -1,0 +1,118 @@
+image: node:24
+
+stages:
+  - security
+  - semgrep
+  - trivy
+  - deploy
+
+gitleaks_scan:
+  stage: security
+  image:
+    name: zricethezav/gitleaks:latest
+    entrypoint: [""]
+  script:
+    - exec > >(tee deploy.log) 2>&1
+    - gitleaks detect --source . --no-git --redact
+  allow_failure: false
+  only:
+    - main
+
+semgrep_scan:
+  stage: semgrep
+  image: semgrep/semgrep:latest
+  script:
+    - semgrep scan --config auto --error .
+  allow_failure: false
+  only:
+    - main
+
+trivy_sca:
+  stage: trivy
+  image:
+    name: aquasec/trivy:0.69.3
+    entrypoint: [""]
+  script:
+    - echo "🔍 Trivy SCA scan (dependencies only)"
+    - trivy fs . --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --no-progress
+  allow_failure: false
+  only:
+    - main
+
+deploy:
+  stage: deploy
+  artifacts:
+    when: always
+    paths:
+      - deploy.log
+  script:
+    - touch deploy.log
+    - exec > >(tee -a deploy.log) 2>&1
+
+    # Decode base64 secrets JSON
+    - BRANCH_SECRETS="${CI_COMMIT_REF_NAME}_env"
+    - echo "${!BRANCH_SECRETS}" | base64 -d > .env
+    - echo "${!BRANCH_SECRETS}" | base64 -d > .dev.vars
+    - cp .env apps/frontend/.env 2>/dev/null || true
+    - cp .env apps/frontend/.env.production 2>/dev/null || true
+
+    # Install pnpm and dependencies
+    - corepack enable
+    - corepack prepare pnpm@9.15.4 --activate
+    - pnpm install --frozen-lockfile
+
+    # Cloudflare credentials
+    - BRANCH_ACCOUNT_ID="dev_cloudflare_account_id"
+    - BRANCH_API_TOKEN="dev_cloudflare_api_token"
+    - export CLOUDFLARE_ACCOUNT_ID="${!BRANCH_ACCOUNT_ID}"
+    - export CLOUDFLARE_API_TOKEN="${!BRANCH_API_TOKEN}"
+
+    # Inject secrets into Worker
+    - |
+      if [ -f .env ]; then
+        while IFS='=' read -r key value || [ -n "$key" ]; do
+          # Skip comments and empty lines
+          [ -z "$key" ] && continue
+          case "$key" in \#*) continue ;; esac
+
+          echo "Injecting secret: $key"
+          printf '%s' "$value" | npx wrangler secret put "$key" -c wrangler.jsonc || true
+        done < .env
+      fi
+
+    # Build and deploy frontend
+    - CLOUDFLARE_ENV="${CI_COMMIT_REF_NAME}" pnpm run build
+    - DEPLOY_WORKER_NAME="mini-desks-${CI_COMMIT_REF_NAME}"
+    - npx wrangler deploy -c wrangler.jsonc --name "${DEPLOY_WORKER_NAME}"
+
+  after_script:
+    - |
+      if [ "$CI_JOB_STATUS" = "failed" ]; then
+        echo "💥 Deployment failed. Sending logs to notification API..."
+
+        if [ -f deploy.log ]; then
+          LOG_CONTENT=$(tail -c 30000 deploy.log)
+        else
+          LOG_CONTENT="deploy.log not found. Job failed before logging started."
+        fi
+
+        export LOG_CONTENT
+
+        PAYLOAD=$(node -e '
+          console.log(JSON.stringify({
+            project_name: process.env.CI_PROJECT_PATH,
+            branch: process.env.CI_COMMIT_REF_NAME,
+            log_file_name: "deploy.log",
+            log_content: process.env.LOG_CONTENT
+          }));
+        ')
+
+        curl -X POST "https://staff.exeloncircuits.in/api/notifications/deployment-failure" \
+          -H "Content-Type: application/json" \
+          -H "X-API-Key: $notification_api_key" \
+          -d "$PAYLOAD" \
+          || echo "⚠️ Notification API failed, ignoring"
+      fi
+
+  only:
+    - main
